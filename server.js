@@ -162,7 +162,7 @@ app.patch('/api/items/:id', authenticateToken, (req, res) => {
   return res.json(items[index]);
 });
 
-
+// 🌐 Serve Angular only if build exists (safe for CI)
 const projectPath = path.join(
   process.env.HOME || '',
   'Desktop',
