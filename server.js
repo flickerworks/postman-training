@@ -43,9 +43,7 @@ app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
 
   if (username === 'admin' && password === 'Admin@123') {
-    const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, {
-      expiresIn: '1h'
-    });
+    const token = ""
 
     return res.json({ token });
   }
@@ -99,7 +97,7 @@ app.get('/api/items/:id', authenticateToken, (req, res) => {
   return res.json(item);
 });
 
-// ➕ Create item
+// ➕ Create item fixing bug
 app.post('/api/items', authenticateToken, (req, res) => {
   const { name, category } = req.body;
 
