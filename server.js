@@ -43,7 +43,9 @@ app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
 
   if (username === 'admin' && password === 'Admin@123') {
-    const token = ""
+    const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, {
+      expiresIn: '1h'
+    });
 
     return res.json({ token });
   }
