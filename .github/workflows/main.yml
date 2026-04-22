@@ -48,6 +48,6 @@ jobs:
           fi
 
           echo "Running Postman tests..."
-      - name: Run API tests
+      
         run: |
           postman collection run "54182200-98585201-53b1-4017-8eb4-bb323971e5f2" -e "54182200-e1e6a704-e331-4a4b-b5f6-5883286fe0c0"
