@@ -3,6 +3,8 @@ name: Automated API tests using Postman CLI
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -18,7 +20,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Set Node version (IMPORTANT for consistency)
+      # Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -32,7 +34,7 @@ jobs:
       - name: Install Postman CLI
         run: curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
 
-      # Authenticate Postman CLI
+      # Login to Postman
       - name: Login to Postman
         run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}
 
@@ -43,7 +45,6 @@ jobs:
           nohup node server.js > server.log 2>&1 &
           SERVER_PID=$!
 
-          # Ensure cleanup always happens
           cleanup() {
             echo "Stopping server..."
             kill $SERVER_PID || true
@@ -61,7 +62,6 @@ jobs:
             sleep 2
           done
 
-          # Final check
           if ! curl --silent --fail http://127.0.0.1:${PORT}/health > /dev/null; then
             echo "Server failed to start"
             echo "===== SERVER LOG ====="
@@ -74,9 +74,46 @@ jobs:
           postman collection run "54182200-98585201-53b1-4017-8eb4-bb323971e5f2" \
             -e "54182200-e1e6a704-e331-4a4b-b5f6-5883286fe0c0" \
             --reporters cli,htmlextra \
-            --reporter-htmlextra-export report.html
+            --reporter-htmlextra-export report.html \
+            | tee postman-output.txt
 
-      # Ensure report always exists (prevents artifact failure)
+      # Publish summary in GitHub UI
+      - name: Publish API test summary
+        if: always()
+        run: |
+          echo "## 📊 API Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ -f postman-output.txt ]; then
+            tail -n 200 postman-output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No test output found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      # Comment on PR with results
+      - name: Comment results on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let output = "No test output found";
+
+            if (fs.existsSync('postman-output.txt')) {
+              output = fs.readFileSync('postman-output.txt', 'utf8')
+                .split('\n')
+                .slice(-200)
+                .join('\n');
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 📊 API Test Results\n\`\`\`\n${output}\n\`\`\``
+            });
+
+      # Ensure report exists
       - name: Ensure report exists
         if: always()
         run: |
@@ -85,7 +122,7 @@ jobs:
             echo "<html><body><h2>No report generated</h2></body></html>" > report.html
           fi
 
-      # Upload report artifact (FIXED VERSION)
+      # Upload HTML report
       - name: Upload htmlextra report
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,17 +130,10 @@ jobs:
           name: postman-htmlextra-report
           path: report.html
 
-      # Upload server logs (VERY useful for debugging)
+      # Upload server logs
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: server-logs
           path: server.log
-      - name: Publish API test summary
-        if: always()
-        run: |
-          echo "## 📊 API Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          tail -n 200 postman-output.txt >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
