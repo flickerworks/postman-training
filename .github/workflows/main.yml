@@ -1,4 +1,4 @@
-name: Automated API tests using Postman CLI
+name: Automated API tests using Newman
 
 on:
   push:
@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   automated-api-tests:
@@ -16,11 +21,11 @@ jobs:
       NODE_ENV: ci
 
     steps:
-      # Checkout code
+      # Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Setup Node.js
+      # Setup Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -30,17 +35,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Install Postman CLI
-      - name: Install Postman CLI
-        run: curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
-
-      # Login to Postman
-      - name: Login to Postman
-        run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}
+      # Install Newman + reporter
+      - name: Install Newman
+        run: npm install -g newman newman-reporter-htmlextra
 
       # Start server + run tests
-      - name: Start server and run Postman tests
+      - name: Start server and run Newman tests
         run: |
+          set -o pipefail
+
           echo "Starting server..."
           nohup node server.js > server.log 2>&1 &
           SERVER_PID=$!
@@ -64,18 +67,31 @@ jobs:
 
           if ! curl --silent --fail http://127.0.0.1:${PORT}/health > /dev/null; then
             echo "Server failed to start"
-            echo "===== SERVER LOG ====="
             cat server.log || true
             exit 1
           fi
 
-          echo "Running Postman collection..."
+          echo "Running Newman collection..."
 
-          postman collection run "54182200-98585201-53b1-4017-8eb4-bb323971e5f2" \
-            -e "54182200-e1e6a704-e331-4a4b-b5f6-5883286fe0c0" \
-            --reporters cli,htmlextra \
+          newman run collection.json \
+            -e environment.json \
+            -r cli,htmlextra \
             --reporter-htmlextra-export report.html \
-            | tee postman-output.txt
+            | tee newman-output.txt
+
+      # Debug output (prevents blind failures)
+      - name: Debug Newman output
+        if: always()
+        run: |
+          echo "===== NEWMAN OUTPUT DEBUG ====="
+          if [ -f newman-output.txt ]; then
+            echo "Line count:"
+            wc -l newman-output.txt
+            echo "Preview:"
+            tail -n 50 newman-output.txt
+          else
+            echo "newman-output.txt not found"
+          fi
 
       # Publish summary in GitHub UI
       - name: Publish API test summary
@@ -83,27 +99,29 @@ jobs:
         run: |
           echo "## 📊 API Test Results" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          if [ -f postman-output.txt ]; then
-            tail -n 200 postman-output.txt >> $GITHUB_STEP_SUMMARY
+          if [ -f newman-output.txt ]; then
+            tail -n 200 newman-output.txt >> $GITHUB_STEP_SUMMARY
           else
             echo "No test output found" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-      # Comment on PR with results
+      # Comment on PR (safe for same-repo PRs only)
       - name: Comment results on PR
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            let output = "No test output found";
 
-            if (fs.existsSync('postman-output.txt')) {
-              output = fs.readFileSync('postman-output.txt', 'utf8')
-                .split('\n')
-                .slice(-200)
-                .join('\n');
+            let output = "⚠️ No test output captured.";
+
+            if (fs.existsSync('newman-output.txt')) {
+              const content = fs.readFileSync('newman-output.txt', 'utf8').trim();
+
+              if (content.length > 0) {
+                output = content.split('\n').slice(-200).join('\n');
+              }
             }
 
             github.rest.issues.createComment({
@@ -118,7 +136,6 @@ jobs:
         if: always()
         run: |
           if [ ! -f report.html ]; then
-            echo "Report missing. Creating fallback..."
             echo "<html><body><h2>No report generated</h2></body></html>" > report.html
           fi
 
@@ -127,10 +144,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: postman-htmlextra-report
+          name: newman-htmlextra-report
           path: report.html
 
-      # Upload server logs
+      # Upload logs
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v4
