@@ -1,5 +1,8 @@
 name: Automated API tests using Postman CLI
-
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 on:
   push:
     branches: [main]
