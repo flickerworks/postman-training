@@ -35,13 +35,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Install Newman + htmlextra
+      # Install Newman + reporter
       - name: Install Newman
         run: npm install -g newman newman-reporter-htmlextra
 
       # Start server + run tests
       - name: Start server and run Newman tests
         run: |
+          set -o pipefail
+
           echo "Starting server..."
           nohup node server.js > server.log 2>&1 &
           SERVER_PID=$!
@@ -77,6 +79,20 @@ jobs:
             --reporter-htmlextra-export report.html \
             | tee newman-output.txt
 
+      # Debug output (prevents blind failures)
+      - name: Debug Newman output
+        if: always()
+        run: |
+          echo "===== NEWMAN OUTPUT DEBUG ====="
+          if [ -f newman-output.txt ]; then
+            echo "Line count:"
+            wc -l newman-output.txt
+            echo "Preview:"
+            tail -n 50 newman-output.txt
+          else
+            echo "newman-output.txt not found"
+          fi
+
       # Publish summary in GitHub UI
       - name: Publish API test summary
         if: always()
@@ -90,20 +106,22 @@ jobs:
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-      # Comment on PR (only same-repo PRs)
+      # Comment on PR (safe for same-repo PRs only)
       - name: Comment results on PR
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            let output = "No test output found";
+
+            let output = "⚠️ No test output captured.";
 
             if (fs.existsSync('newman-output.txt')) {
-              output = fs.readFileSync('newman-output.txt', 'utf8')
-                .split('\n')
-                .slice(-200)
-                .join('\n');
+              const content = fs.readFileSync('newman-output.txt', 'utf8').trim();
+
+              if (content.length > 0) {
+                output = content.split('\n').slice(-200).join('\n');
+              }
             }
 
             github.rest.issues.createComment({
