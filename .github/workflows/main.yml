@@ -50,4 +50,19 @@ jobs:
           fi
 
           echo "Running Postman tests..."
+
           postman collection run "54182200-98585201-53b1-4017-8eb4-bb323971e5f2" -e "54182200-e1e6a704-e331-4a4b-b5f6-5883286fe0c0"
+      - name: generate htmlextra report and review in CI artifacts
+        run: |
+          postman report generate htmlextra --output report.html
+          echo "Generated htmlextra report"
+          ls -l report.html
+          echo "===== REPORT CONTENT ====="
+          cat report.html || true
+          echo "===== END OF REPORT ====="
+        continue-on-error: true
+      - name: Upload htmlextra report as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: postman-htmlextra-report
+          path: report.html
