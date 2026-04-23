@@ -100,3 +100,10 @@ jobs:
         with:
           name: server-logs
           path: server.log
+      - name: Publish API test summary
+        if: always()
+        run: |
+          echo "## 📊 API Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          tail -n 200 postman-output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
